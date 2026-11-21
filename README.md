@@ -33,7 +33,7 @@
 - `app/src/main/java/com/example/` — অ্যাপ সোর্স কোড (`auth`, `data`, `firebase`, `ui`)
 - `firestore.rules` & `firebase-blueprint.json` — Firestore সিকিউরিটি রুলস ও ডেটা স্কিমা
 - `firestore.test.js` & `firebase.json` — লোকাল Firestore এমুলেটর রুলস ইউনিট টেস্ট
-- `.github/workflows/android.yml` — GitHub Actions CI বিল্ড ও টেস্ট ওয়ার্কফ্লো
+- `.github/workflows/android.yml` — GitHub Actions CI বিল্ড (JDK 21 + Gradle 9.3.1), ইউনিট টেস্ট ও Debug APK আর্টিফ্যাক্ট ওয়ার্কফ্লো
 
 ## বিল্ড ও টেস্ট
 
