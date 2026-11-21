@@ -42,35 +42,77 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare and verify signing keystore & Firebase config
+      - name: Prepare signing keystore & Firebase config
         env:
           GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
           GOOGLE_SERVICES_JSON_B64_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
           DEBUG_KEYSTORE_B64_SECRET: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
         run: |
+          KEYSTORE_SOURCE="repo-or-secret"
           if [ -n "$DEBUG_KEYSTORE_B64_SECRET" ]; then
             printf '%s' "$DEBUG_KEYSTORE_B64_SECRET" | base64 -d > debug.keystore
           elif [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
             base64 -d debug.keystore.base64 > debug.keystore
           elif [ ! -f debug.keystore ]; then
-            echo "::error title=Missing Debug Keystore::debug.keystore.base64 is missing from the repository and DEBUG_KEYSTORE_BASE64 secret is not set. Google Sign-In requires the registered debug keystore."
-            exit 1
+            KEYSTORE_SOURCE="ephemeral"
+            echo "::warning title=Ephemeral CI Debug Keystore::debug.keystore.base64 is not in the GitHub repo (excluded by Push to GitHub). Generating an ephemeral debug.keystore for CI build/tests. Upload debug.keystore.base64 or set DEBUG_KEYSTORE_BASE64 secret so Google Sign-In works in GitHub-built APKs."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+          FIREBASE_SOURCE="repo-or-secret"
           if [ -n "$GOOGLE_SERVICES_JSON_SECRET" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
           elif [ -n "$GOOGLE_SERVICES_JSON_B64_SECRET" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON_B64_SECRET" | base64 -d > app/google-services.json
           elif [ ! -f app/google-services.json ]; then
-            echo "::error title=Missing Firebase Config::app/google-services.json is missing from the repository and GOOGLE_SERVICES_JSON secret is not set. Upload app/google-services.json or set the secret so Google Sign-In works."
-            exit 1
+            FIREBASE_SOURCE="ephemeral"
+            echo "::warning title=Ephemeral CI Firebase Config::app/google-services.json not found. Using ephemeral placeholder config for CI compile/test only."
+            cat << 'EOF' > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "ci-placeholder-project"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.aistudio.nursingai.kxmzpq"
+                  }
+                },
+                "oauth_client": [
+                  {
+                    "client_id": "000000000000-ci.apps.googleusercontent.com",
+                    "client_type": 3
+                  }
+                ],
+                "api_key": [
+                  {
+                    "current_key": "CI_PLACEHOLDER_KEY"
+                  }
+                ]
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
           fi
 
-          SHA1_HEX=$(keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -iE "SHA1:|SHA-1:" | head -n 1 | sed -E 's/.*SHA-?1:[[:space:]]*//I' | tr -d ':' | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-          echo "Signing keystore SHA-1: $SHA1_HEX"
-          if [ -z "$SHA1_HEX" ] || ! grep -qi "$SHA1_HEX" app/google-services.json; then
-            echo "::error title=Keystore SHA-1 Mismatch::Debug keystore SHA-1 ($SHA1_HEX) is not registered in app/google-services.json. Google Sign-In will fail until they match."
-            exit 1
+          SHA1_COLON=$(keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -iE "SHA1:|SHA-1:" | head -n 1 | sed -E 's/.*SHA-?1:[[:space:]]*//I' | tr -d '[:space:]')
+          SHA1_HEX=$(printf '%s' "$SHA1_COLON" | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          echo "Signing keystore SHA-1: $SHA1_COLON ($SHA1_HEX)"
+
+          if [ "$KEYSTORE_SOURCE" = "repo-or-secret" ] && [ "$FIREBASE_SOURCE" = "repo-or-secret" ] && grep -qi "$SHA1_HEX" app/google-services.json; then
+            echo "Verified: Keystore SHA-1 matches app/google-services.json (Google Sign-In ready)."
+            echo "✅ **Google Sign-In Ready:** Signing keystore SHA-1 (\`$SHA1_COLON\`) matches \`app/google-services.json\`." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=Google Sign-In Requires Registered Keystore::Current CI APK SHA-1 ($SHA1_COLON) is not registered in app/google-services.json. Add debug.keystore.base64 (or DEBUG_KEYSTORE_BASE64 secret) for Google Sign-In."
+            {
+              echo "⚠️ **CI Build Note (Google Sign-In):**"
+              echo "- Built APK SHA-1: \`$SHA1_COLON\`"
+              echo "- \`debug.keystore.base64\` was omitted during Push to GitHub, so CI used a temporary keystore. Upload \`debug.keystore.base64\` (from AI Studio ZIP export) or set GitHub Secret \`DEBUG_KEYSTORE_BASE64\` so Google Sign-In works in CI APKs."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Build Debug APK
