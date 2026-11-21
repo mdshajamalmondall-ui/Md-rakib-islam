@@ -24,15 +24,25 @@ jobs:
         run: |
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
           SDKMANAGER="$(command -v sdkmanager || find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error title=Android SDK Setup Failed::sdkmanager not found under $SDK_ROOT"
+            exit 1
+          fi
           yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
-          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
+          set -o pipefail
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0" 2>&1 | tee /tmp/sdk.log || {
+            set +e
+            ERR=$(tail -n 15 /tmp/sdk.log | tr '\n' ' ')
+            echo "::error title=Android SDK Setup Failed::${ERR:-sdkmanager failed}"
+            exit 1
+          }
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare debug keystore
+      - name: Prepare CI signing and Firebase config if omitted
         run: |
           if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
             base64 -d debug.keystore.base64 > debug.keystore
@@ -40,11 +50,65 @@ jobs:
             keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
+          if [ ! -f app/google-services.json ]; then
+            echo "::warning::app/google-services.json was not present in checkout; generating ephemeral CI config for build verification."
+            cat << 'EOF' > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "ci-placeholder-project"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+                  "android_client_info": {
+                    "package_name": "com.aistudio.nursingai.kxmzpq"
+                  }
+                },
+                "oauth_client": [
+                  {
+                    "client_id": "000000000000-ci.apps.googleusercontent.com",
+                    "client_type": 3
+                  }
+                ],
+                "api_key": [
+                  {
+                    "current_key": "CI_PLACEHOLDER_KEY"
+                  }
+                ]
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          fi
+
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --no-daemon --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" --stacktrace 2>&1 | tee /tmp/assemble.log || {
+            set +e
+            ERR=$(grep -E "^(e: |FAILURE:|Execution failed|> |.*Exception|.*Error|.*Unresolved)" /tmp/assemble.log | head -n 12 | tr '\n' ' ')
+            if [ -z "$ERR" ]; then
+              ERR=$(tail -n 15 /tmp/assemble.log | tr '\n' ' ')
+            fi
+            echo "::error title=Debug APK Build Failed::${ERR:-See build step logs}"
+            exit 1
+          }
 
       - name: Run Unit Tests
-        run: gradle :app:testDebugUnitTest --no-daemon -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" --stacktrace
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --no-daemon --no-configuration-cache -Dorg.gradle.jvmargs="-Xmx3g -Dfile.encoding=UTF-8" --stacktrace 2>&1 | tee /tmp/test.log || {
+            set +e
+            ERR=$(grep -E "^(e: |FAILURE:|Execution failed|> |.*Exception|.*Error|.*FAILED)" /tmp/test.log | head -n 12 | tr '\n' ' ')
+            if [ -z "$ERR" ]; then
+              ERR=$(tail -n 15 /tmp/test.log | tr '\n' ' ')
+            fi
+            echo "::error title=Unit Tests Failed::${ERR:-See test step logs}"
+            exit 1
+          }
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v6
