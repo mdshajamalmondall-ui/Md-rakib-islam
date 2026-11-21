@@ -45,4 +45,6 @@ gradle :app:assembleDebug
 FIRESTORE_EMULATOR_HOST="127.0.0.1:8085" node --test firestore.test.js
 ```
 
-> **নোট:** GitHub-এ কোড পুশ করার জন্য AI Studio-এর Settings মেনু থেকে **Push to GitHub** ব্যবহার করতে পারেন অথবা ZIP হিসেবে এক্সপোর্ট করে রিপোজিটরিতে আপলোড করতে পারেন।
+> **নোট (GitHub থেকে APK বিল্ড ও Google Sign-In):**
+> - GitHub Actions দিয়ে তৈরি APK-তে **Google Sign-In** কাজ করার জন্য রিপোজিটরিতে `app/google-services.json` এবং `debug.keystore.base64` থাকা প্রয়োজন (AI Studio থেকে **Push to GitHub** বা ZIP এক্সপোর্টের মাধ্যমে এগুলো যুক্ত থাকে)।
+> - যদি আপনার GitHub রিপোজিটরিতে এগুলো না থাকে, তাহলে GitHub Repository Settings → Secrets and variables → Actions-এ `GOOGLE_SERVICES_JSON` ও `DEBUG_KEYSTORE_BASE64` যোগ করলে CI বিল্ড স্বয়ংক্রিয়ভাবে সঠিক সাইনিংসহ APK তৈরি করবে।

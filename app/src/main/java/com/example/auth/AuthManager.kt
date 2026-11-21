@@ -65,6 +65,12 @@ fun authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
     awaitClose { auth.removeAuthStateListener(listener) }
 }
 
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 fun attemptAutoSignIn(
     context: Context,
     credentialManager: CredentialManager,
@@ -82,6 +88,10 @@ fun attemptAutoSignIn(
         onUnauthenticated()
         return
     }
+    if (clientId.isBlank() || clientId.startsWith("000000000000")) {
+        onUnauthenticated()
+        return
+    }
     val googleIdOption = GetGoogleIdOption.Builder()
         .setFilterByAuthorizedAccounts(true)
         .setServerClientId(clientId)
@@ -93,7 +103,7 @@ fun attemptAutoSignIn(
 
     scope.launch {
         try {
-            val activityContext = context as? Activity ?: run {
+            val activityContext = context.findActivity() ?: run {
                 onUnauthenticated()
                 return@launch
             }
@@ -117,7 +127,7 @@ fun onGoogleSignInClicked(
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
-    onAuthCancelled: () -> Unit = {}
+    onAuthCancelled: (String?) -> Unit = {}
 ) {
     val clientId = try {
         context.getString(R.string.default_web_client_id)
@@ -125,7 +135,11 @@ fun onGoogleSignInClicked(
         onAuthError("Google Sign-In কনফিগারেশন পাওয়া যায়নি (default_web_client_id)।")
         return
     }
-    val activity = context as? Activity
+    if (clientId.isBlank() || clientId.startsWith("000000000000")) {
+        onAuthError("এই APK বিল্ডে আসল Firebase কনফিগারেশন (app/google-services.json) যুক্ত নেই। GitHub-এ google-services.json বা GOOGLE_SERVICES_JSON সিক্রেট যোগ করে আবার বিল্ড করুন।")
+        return
+    }
+    val activity = context.findActivity()
     if (activity == null) {
         onAuthError("সাইন-ইন শুরু করতে অ্যাক্টিভিটি পাওয়া যায়নি।")
         return
@@ -147,7 +161,7 @@ fun onGoogleSignInClicked(
             }
         } catch (e: GetCredentialCancellationException) {
             Log.w(TAG, "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
-            onAuthCancelled()
+            onAuthCancelled(e.message)
         } catch (e: Exception) {
             Log.e(TAG, "Google Sign-In failed", e)
             onAuthError(e.localizedMessage ?: "Google সাইন-ইন ব্যর্থ হয়েছে। আবার চেষ্টা করুন।")
@@ -200,7 +214,11 @@ fun GoogleSignInButton(
                     onAuthError(msg)
                 },
                 scope = scope,
-                onAuthCancelled = { isLoading = false }
+                onAuthCancelled = { detail ->
+                    isLoading = false
+                    val reason = detail?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+                    onAuthError("Google সাইন-ইন সম্পন্ন হয়নি$reason। আপনি বাতিল না করে থাকলে নিশ্চিত করুন APK-টি নিবন্ধিত debug.keystore ও google-services.json দিয়ে বিল্ড করা হয়েছে।")
+                }
             )
         },
         enabled = !isLoading,
