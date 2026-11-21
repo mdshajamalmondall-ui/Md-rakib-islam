@@ -1,0 +1,6 @@
+{
+  "name": "নার্সিং এআই",
+  "description": "মেডিকেল-সার্জিক্যাল নার্সিং বই ভিত্তিক এআই চ্যাট, মেডিসিন ডোজ টুলস, নোটস ও প্রোফাইল অ্যাপ।",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,184 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default-deny all unmatched paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Shared Helpers ---
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidServerTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // --- Validation Helpers ---
+    function isValidUserProfile(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+             data.email is string && data.email.size() <= 150 &&
+             data.designation is string && data.designation.size() <= 100 &&
+             data.institution is string && data.institution.size() <= 150 &&
+             data.ward is string && data.ward.size() <= 100 &&
+             data.registrationId is string && data.registrationId.size() <= 80 &&
+             data.bio is string && data.bio.size() <= 500 &&
+             isValidServerTimestamp(data.createdAt) &&
+             isValidServerTimestamp(data.updatedAt);
+    }
+
+    function isValidSavedNote(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 15000 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.sourceType is string && data.sourceType in ['AI_ANSWER', 'PERSONAL_NOTE'] &&
+             (!('depthMode' in data) || (data.depthMode is string && data.depthMode in ['BRIEF', 'STANDARD', 'DETAILED'])) &&
+             data.pinned is bool &&
+             isValidServerTimestamp(data.createdAt) &&
+             isValidServerTimestamp(data.updatedAt);
+    }
+
+    function isValidMedication(data, userId) {
+      return data.userId is string &&
+             data.userId == userId &&
+             data.medicineName is string && data.medicineName.size() >= 1 && data.medicineName.size() <= 120 &&
+             data.dose is string && data.dose.size() >= 1 && data.dose.size() <= 80 &&
+             data.route is string && data.route in ['IV', 'IM', 'PO', 'SC', 'NEB', 'TOPICAL', 'OTHER'] &&
+             data.frequency is string && data.frequency in ['OD', 'BD', 'TDS', 'QID', 'STAT', 'PRN', 'Q8H', 'Q12H'] &&
+             data.scheduleTime is string && data.scheduleTime.size() <= 60 &&
+             data.patientLabel is string && data.patientLabel.size() <= 100 &&
+             data.notes is string && data.notes.size() <= 1000 &&
+             data.active is bool &&
+             data.dosesGivenCount is int && data.dosesGivenCount >= 0 && data.dosesGivenCount <= 100000 &&
+             (!('lastGivenAt' in data) || isValidServerTimestamp(data.lastGivenAt)) &&
+             isValidServerTimestamp(data.createdAt) &&
+             isValidServerTimestamp(data.updatedAt);
+    }
+
+    // --- Collection Rules ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'email', 'designation',
+                         'institution', 'ward', 'registrationId', 'bio',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'email', 'designation',
+                         'institution', 'ward', 'registrationId', 'bio',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'email', 'designation', 'institution',
+                         'ward', 'registrationId', 'bio', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /notes/{noteId} {
+        allow get: if isOwner(userId) && isValidId(noteId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(noteId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'title', 'content', 'category',
+                           'sourceType', 'pinned', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'title', 'content', 'category',
+                           'sourceType', 'depthMode', 'pinned', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidSavedNote(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(noteId) &&
+                         isValidSavedNote(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'title', 'content', 'category', 'pinned', 'updatedAt'
+                           ]) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'pinned', 'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(noteId);
+      }
+
+      match /medications/{medId} {
+        allow get: if isOwner(userId) && isValidId(medId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(medId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'medicineName', 'dose', 'route', 'frequency',
+                           'scheduleTime', 'patientLabel', 'notes', 'active',
+                           'dosesGivenCount', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'medicineName', 'dose', 'route', 'frequency',
+                           'scheduleTime', 'patientLabel', 'notes', 'active',
+                           'dosesGivenCount', 'lastGivenAt', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidMedication(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(medId) &&
+                         isValidMedication(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'medicineName', 'dose', 'route', 'frequency',
+                             'scheduleTime', 'patientLabel', 'notes', 'active', 'updatedAt'
+                           ]) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'dosesGivenCount', 'lastGivenAt', 'updatedAt'
+                           ]) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'active', 'updatedAt'
+                           ])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(medId);
+      }
+    }
+  }
+}

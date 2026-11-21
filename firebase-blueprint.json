@@ -1,0 +1,220 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated nurse or nursing student profile stored under /users/{userId}.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User's full name."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address from Google Sign-In."
+        },
+        "designation": {
+          "type": "string",
+          "description": "Nursing role or academic year (e.g., Senior Staff Nurse, BSc Nursing Student)."
+        },
+        "institution": {
+          "type": "string",
+          "description": "Hospital, clinic, or nursing college name."
+        },
+        "ward": {
+          "type": "string",
+          "description": "Assigned ward or department (e.g., Surgical Ward, ICU)."
+        },
+        "registrationId": {
+          "type": "string",
+          "description": "BNMC registration number or student ID."
+        },
+        "bio": {
+          "type": "string",
+          "description": "Short professional bio or clinical focus note."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "email",
+        "designation",
+        "institution",
+        "ward",
+        "registrationId",
+        "bio",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedNote": {
+      "title": "SavedNote",
+      "description": "Saved AI nursing answer or personal study/ward note under /users/{userId}/notes/{noteId}.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the note owner."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the saved note or AI answer."
+        },
+        "content": {
+          "type": "string",
+          "description": "Body content of the saved answer or nursing note."
+        },
+        "category": {
+          "type": "string",
+          "description": "Topic category such as Medical Surgical, Pharmacology, Emergency, or Personal Note."
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["AI_ANSWER", "PERSONAL_NOTE"],
+          "description": "Indicates whether saved from AI Chat or authored personally."
+        },
+        "depthMode": {
+          "type": "string",
+          "enum": ["BRIEF", "STANDARD", "DETAILED"],
+          "description": "Optional answer depth mode when saved from AI Chat."
+        },
+        "pinned": {
+          "type": "boolean",
+          "description": "Whether the note is pinned at the top of the Files list."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "title",
+        "content",
+        "category",
+        "sourceType",
+        "pinned",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "MedicationItem": {
+      "title": "MedicationItem",
+      "description": "Medicine and dosage schedule entry under /users/{userId}/medications/{medId}.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner."
+        },
+        "medicineName": {
+          "type": "string",
+          "description": "Generic or brand medication name."
+        },
+        "dose": {
+          "type": "string",
+          "description": "Ordered dose string (e.g., 500 mg, 1 g, 20 IU)."
+        },
+        "route": {
+          "type": "string",
+          "enum": ["IV", "IM", "PO", "SC", "NEB", "TOPICAL", "OTHER"],
+          "description": "Route of administration."
+        },
+        "frequency": {
+          "type": "string",
+          "enum": ["OD", "BD", "TDS", "QID", "STAT", "PRN", "Q8H", "Q12H"],
+          "description": "Dosing frequency."
+        },
+        "scheduleTime": {
+          "type": "string",
+          "description": "Scheduled administration times."
+        },
+        "patientLabel": {
+          "type": "string",
+          "description": "Ward, bed, or patient reference label."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Clinical administration precautions or notes."
+        },
+        "active": {
+          "type": "boolean",
+          "description": "Whether the medication order is currently active."
+        },
+        "dosesGivenCount": {
+          "type": "integer",
+          "description": "Number of doses logged as administered."
+        },
+        "lastGivenAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Optional server timestamp of the last administered dose."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "medicineName",
+        "dose",
+        "route",
+        "frequency",
+        "scheduleTime",
+        "patientLabel",
+        "notes",
+        "active",
+        "dosesGivenCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Private user profile document keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": {
+        "$ref": "#/entities/SavedNote"
+      },
+      "description": "User-scoped collection of saved AI answers and personal nursing notes."
+    },
+    "/users/{userId}/medications/{medId}": {
+      "schema": {
+        "$ref": "#/entities/MedicationItem"
+      },
+      "description": "User-scoped collection of managed medicines and dosage logs."
+    }
+  }
+}
